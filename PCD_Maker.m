@@ -60,7 +60,7 @@ disp('Processing...')
 %     f = waitbar(0,'1','Name','Doing Da Data');
 
 % loop_array = 1:1:num_pc;
-loop_array = 1:25:num_pc;
+loop_array = 1:1:100;
 for i = loop_array
 
 %         % Safety, I feel better knowing it's here
@@ -81,7 +81,7 @@ for i = loop_array
     alt                     = GPS_TimeTable.Data(gps_ind,3);
     
     % Setting Local Coords for the first thing in the list        
-    if i == 1
+    if i == loop_array(1)
         
         lat_start           = double(lat(i));
         lon_start           = double(lon(i));
@@ -196,6 +196,8 @@ disp('Point cloud object created. Saving to .pcd...')
 
 %     FileName = string(export_dir) + "/Export_Cloud.pcd";
 
+disp('Point cloud saved to .pcd! Plotting figures...')
+
 figure
 for i = loop_array
 
@@ -211,34 +213,34 @@ for i = loop_array
 end
 
 
-% Making the plots prettier
-gps_time_diff   = nonzeros(gps_time_diff);
-vect            = nonzeros(vect(2:end));
-duration_gps    = nonzeros(duration_gps);
-duration_lidar  = nonzeros(duration_lidar);
-speed           = nonzeros(speed(2:end));
-lat             = nonzeros(lat);
-lon             = nonzeros(lon);
+%% Making the plots prettier
+% gps_time_diff   = nonzeros(gps_time_diff);
+% vect            = nonzeros(vect);
+% duration_gps    = nonzeros(duration_gps);
+% duration_lidar  = nonzeros(duration_lidar);
+% speed           = nonzeros(speed);
+% lat             = nonzeros(lat);
+% lon             = nonzeros(lon);
 
 figure
 tiledlayout(2,2);
 
 nexttile
-plot(gps_time_diff)
+scatter(loop_array,gps_time_diff,'.')
 xlabel('Point Cloud Number')
 ylabel('Time (s)')
 title('Time stamp difference')
 
 nexttile
-plot(vect)
+plot(loop_array,vect,'.-')
 xlabel('Point Cloud Number')
 ylabel('Dist (m)')
 title('Distance Traveled')
 
 nexttile
-plot(duration_gps,'r.-')
+plot(loop_array,duration_gps,'ro-')
 hold on
-plot(duration_lidar,'b.-')
+plot(loop_array,duration_lidar,'b.-')
 xlabel('Point Cloud Number')
 ylabel('Time Stamp (s)')
 legend('GPS','LiDAR')
@@ -246,7 +248,7 @@ title('DT Check')
 hold off
 
 nexttile
-plot(speed)
+plot(loop_array,speed,'.-')
 xlabel('Point Cloud Number')
 ylabel('Speed (m/s)')
 title('Speed')
