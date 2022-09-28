@@ -48,6 +48,7 @@ for i = 1:1:length(LiDAR_TimeTable.Time)
     lat(i)                      = GPS_TimeTable.Data(gps_ind,1); % latitude
     lon(i)                      = GPS_TimeTable.Data(gps_ind,2); % longitude
     alt(i)                      = GPS_TimeTable.Data(gps_ind,3); % altitude
+    
     track(i)                    = GPS_TimeTable.Data(gps_ind,4) + track_offset; % heading (deg from north)
 
     

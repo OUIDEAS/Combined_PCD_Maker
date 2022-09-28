@@ -52,8 +52,7 @@ Epoch(i)           = double(gps_struct{i}.Header.Stamp.Sec) + double(gps_struct{
 
 % Getting the lat, lon, and alt and slamming those puppies into an
 % array for yah
-Lat_Lon_Alt_Track     = [Lat_Lon_Alt_Track; gps_struct{i}.Latitude gps_struct{i}.Longitude gps_struct{i}.Altitude gps_struct{i}.Track];
-
+Lat_Lon_Alt_Track     = [Lat_Lon_Alt_Track; gps_struct{i}.Latitude gps_struct{i}.Longitude gps_struct{i}.Altitude gps_struct{i}.Pitch gps_struct{i}.Roll gps_struct{i}.Track];
 
 end
 
