@@ -2,3 +2,6 @@ Data/
 *.asv
 Data
 /Data
+Data/*
+/Data/*
+Data*

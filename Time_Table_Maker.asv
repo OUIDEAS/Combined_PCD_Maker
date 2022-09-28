@@ -1,21 +1,22 @@
-% Making the Time Table that the other scripts like
+% Making the Time Table that the maker scripts l
 
 %% Grabbing the rosbag
 
 % Location of Rosbag File
 [bag_file, bag_path]                            = uigetfile('.bag', 'Select Rosbag');
 
-% Timing
+%Timing
 tic
 
-% Setting Full File Path
+%Setting Full File Path
 bag_path            = fullfile(bag_path, bag_file);
 
-% Initializing rosbag
+%Initializing rosbag
+% bag_init            = rosbag(bag_path);
 bag_init            = rosbag(bag_path);
 
-% Timing
-disp("End of Rosbag Initilization: ")
+%Timing
+fprintf("\nEnd of Rosbag Initilization: \n")
 toc
 
 
@@ -105,22 +106,9 @@ save(FileName, 'IMU_TimeTable')
 
 clear Epoch
 
-% Var Init
-
-% RPM of the LiDAR    
-RPM                                             = 900;
-
-% Device Model (string): VLP16 VLP32C HDL32E HDL64E VLS128
-device_model                                    = "VLP32C";
-
-% Number of channels
-num_channels                                    = 32;
-
 % Converting the RPM into Hz then finding dT for each revolution. This
 % will hopefully make a point cloud with one full revolution.
 dT                      = 1 / (RPM / 60);
-
-% Processing the lazers
 
 % Velodyne Topic
 velodyne_packets_topic	= '/velodyne_packets';
