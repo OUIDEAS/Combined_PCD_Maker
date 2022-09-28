@@ -6,10 +6,16 @@
 clear all; close all; clc;
 
 % Querey for files
-gps_mat     = uigetfile('*.mat','Grab GPS file');
-imu_mat     = uigetfile('*.mat','Grab IMU file');
-lidar_mat   = uigetfile('*.mat','Grab LiDAR file');
+% gps_mat     = uigetfile('*.mat','Grab GPS file');
+% imu_mat     = uigetfile('*.mat','Grab IMU file');
+% lidar_mat   = uigetfile('*.mat','Grab LiDAR file');
+%  
+
+gps_mat = 'Data/GPS_TimeTable.mat';
+imu_mat = 'Data/IMU_TimeTable.mat';
+lidar_mat = 'Data/LiDAR_TimeTable.mat';
    
+
 % Load Files
 disp('Loading files...')
 load(gps_mat);
@@ -47,7 +53,9 @@ disp('Processing...')
 f = waitbar(0,'1','Name','Doing Da Data');
 
 % loop_array = 1:1:num_pc;
-loop_array = 2:30:num_pc;
+% loop_array = 2:30:num_pc;
+loop_array = 2:5:num_pc;
+
 for i = loop_array
 
 %         % Safety, I feel better knowing it's here
@@ -71,13 +79,10 @@ for i = loop_array
     alt(i)                      = GPS_TimeTable.Data(gps_ind,3);
     track(i)                    = GPS_TimeTable.Data(gps_ind,4);
     
-    % Setting offset
-    PCD_ROT_OFFSET              = rotz(track(i) - 180);
-
-    
+   
     % Setting Local Coords for the first thing in the list        
     if i == 2
-        
+    
         % Starting point
         lat_start                   = double(lat(i));
         lon_start                   = double(lon(i));
@@ -106,7 +111,9 @@ for i = loop_array
     else
 
         [dx(i), dy(i), dz(i)]       = geodetic2ned(lat(i), lon(i), alt(i), lat_start, lon_start, alt_start, wgs84);
-        
+        dx(i) = -dx(i);
+        dy(i) = -dy(i);
+        dz(i) = dz(i);
         vect(i)                     = sqrt(dx(i)^2 + dy(i)^2 + dz(i)^2);
         
         d_vect(i)                   = vect(i) - vect(i-1);
@@ -144,6 +151,11 @@ for i = loop_array
     
     point_coords                = [point_coords; lat(i) lon(i) e_lat(i) e_lon(i)];
     
+    % Setting offset
+    PCD_ROT_OFFSET              =  rotz(90);
+    ROTATION_UPDATE = rotx(0) * roty(0) * rotz(track(i) + 90);
+
+    
     %% De-bugging time stamps
 %     fprintf("\n LiDAR Time stamp: %s \n GPS Time Stamp: %s \n GPS Time Diff: %s \n IMU Time Stamp: %s \n IMU Time Diff: %s \n", LiDAR_TimeTable.Time(i), gps_closest_time(i), gps_time_diff(i), imu_closest_time(i), imu_time_diff(i))
 
@@ -175,7 +187,7 @@ for i = loop_array
 %         
 %     end
 
-    xyzi(:,1:3)     = [xyzi(:,1) xyzi(:,2) xyzi(:,3)] *  PCD_ROT_OFFSET;
+    
     
     % Rotating the point cloud STEP 2: Use the IMU to adjust the
     % orientation of the point cloud
@@ -184,11 +196,14 @@ for i = loop_array
 %     for k = 1:1:length(xyzi(:,1))
 %         xyzi(k,1:3)         = Rot_Mat * xyzi(k,1:3)';
 %     end
+
+    xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * ROTATION_UPDATE * PCD_ROT_OFFSET;
     
     % Adding GPS offset
-%     xyzi(:,1)            = (xyzi(:,1)) - dx(i);
-%     xyzi(:,2)            = (xyzi(:,2)) - dy(i);
-%     xyzi(:,3)            = (xyzi(:,3)) + alt(i);
+    xyzi(:,1)            = (xyzi(:,1)) + dx(i);
+    xyzi(:,2)            = (xyzi(:,2)) + dy(i);
+    xyzi(:,3)            = (xyzi(:,3)) + alt(i);
+%     xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * PCD_ROT_OFFSET;
     
     % Storing dx, dy for debugging
     dxy_store = [dxy_store; dx(i) dy(i) alt(i)];
@@ -220,43 +235,44 @@ disp('Point cloud saved to .pcd! Plotting figures...')
 color_array = [1 0 0 ; 0 1 0 ; 0 0 1 ; 0 1 1 ; 1 0 1 ; 1 1 0 ; 0 0 0];
 
 j = 1;
+% count = 1;
+% figure
+% for i = loop_array
+%     
+%     if i == length(color_array(:,1))
+%         j = 1;
+%     end
+% 
+%     % Displaying the resulting point cloud
+%     
+%     color_ind = color_array(j,:);
+%     
+% %     pcshow(Export_Cloud)  
+%     scattet_plt = scatter3(XYZI_Apphend{i}(:,1), XYZI_Apphend{i}(:,2), XYZI_Apphend{i}(:,3));
+%     scattet_plt.MarkerFaceColor = color_ind;
+%     scattet_plt.MarkerEdgeColor = color_ind;
+%     scattet_plt.Marker = '.';
+%     
+%     hold on
+%     origin_plt = scatter3(dx(i), dy(i), alt(i));
+% %     origin_plt = scatter3(dxy_store(count,1), dxy_store(count,2), 0);
+%     origin_plt.MarkerFaceColor = color_ind;
+%     origin_plt.MarkerEdgeColor = color_ind;
+%     origin_plt.LineWidth = 10;
+%     origin_plt.Marker = '*';
+% 
+%     
+%     view([0 0 90])
+%     axis equal
+%     
+%     j = j + 1;
+% %     count = count + 1;
+%     
+%     hold on
+% 
+% end
 
-figure
-for i = loop_array
-    
-    if i == length(color_array(:,1))
-        j = 1;
-    end
-
-    % Displaying the resulting point cloud
-    
-    color_ind = color_array(j,:);
-    
-%     pcshow(Export_Cloud)  
-    scattet_plt = scatter3(XYZI_Apphend{i}(:,1), XYZI_Apphend{i}(:,2), XYZI_Apphend{i}(:,3));
-    scattet_plt.MarkerFaceColor = color_ind;
-    scattet_plt.MarkerEdgeColor = color_ind;
-    scattet_plt.Marker = '.';
-    
-    hold on
-    
-    origin_plt = scatter3(-dxy_store(:,1), -dxy_store(:,2), -dxy_store(:,3));
-    origin_plt.MarkerFaceColor = color_ind;
-    origin_plt.MarkerEdgeColor = color_ind;
-    origin_plt.LineWidth = 10;
-    origin_plt.Marker = '*';
-
-    
-    view([0 0 90])
-    axis equal
-    
-    j = j + 1;
-    
-    hold on
-
-end
-
-legend
+% legend
 
 %%
 
@@ -280,9 +296,13 @@ for i = 1:1:length(XYZI_Apphend)
     
 end
 
+hold on
 Export_Cloud    = pointCloud([Export_XYZI(:,1) Export_XYZI(:,2) Export_XYZI(:,3)], 'Intensity', Export_XYZI(:,4));
-
+plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
+scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
+scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
 pcshow(Export_Cloud)
+hold off
 
 %% Making the plots prettier
 gps_time_diff   = nonzeros(gps_time_diff);
