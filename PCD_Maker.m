@@ -41,12 +41,15 @@ disp('Loading complete!')
 % counter, which looks at the length of the index of the point clouds
 store_ind                   = 1;
 
-% Plotting stuff **EVALUATE LATER**
+% Plotting stuff **NO LONGER NEEDED PLOTTING UPDATE REQUIRED PRIOR TO REMOVAL**
 dxy_store                   = [];
 
-% Unit vectors
-unit_vector                 = [1 0 0];
-unit_vector_ll              = [0.00001 0 0]; %[x y z]
+% bool to determine if we loop through each generated point cloud
+loop_bool                   = 0;
+
+% Unit vectors for plotting
+unit_vector_m               = [1 0 0];          %[x y z]
+unit_vector_ll              = [0.00001 0 0];    %[x y z]
 
 % Variable for converting GPS coordinates into meters
 wgs84                       = wgs84Ellipsoid;
@@ -68,10 +71,24 @@ dist(store_ind)             = 0;
 duration_gps(store_ind)     = 0;
 
 % Speed calculated from the distance 
-speed(store_ind)            = 0;
+speed_gps(store_ind)        = 0;
 
 % Time difference between the current and previous lidar time stamps
 duration_lidar(store_ind)   = 0;
+
+% Frame reference resolution between the LiDAR and the gps/imu
+
+% LiDAR reference frame:    1.584; 0; 1.444 [X Y Z]
+LiDAR_Ref_Frame             = [ 1.584; 0; 1.444];
+
+% IMU reference frame:      0.336; 0; -0.046 [X Y Z]
+IMU_Ref_Frame               = [0.336; 0; -0.046];
+
+% Correction frame:         LiDAR_Ref_Frame - IMU_Ref_Frame [X Y Z]
+gps_lidar_diff              = [(LiDAR_Ref_Frame(1) - IMU_Ref_Frame(1)), (LiDAR_Ref_Frame(2) - IMU_Ref_Frame(2)), (LiDAR_Ref_Frame(3) - IMU_Ref_Frame(3))]; 
+
+% Correction rotation: IMU is rotated -90* relative to the LiDAR
+PCD_ROT_OFFSET              = 90;
 
 %% Processing loaded data
 
@@ -86,7 +103,7 @@ num_pc              = length(LiDAR_TimeTable.Data);
 % Creating an array to determine which point clouds are used
 % loop_array = 1:1:num_pc;
 % loop_array = 2:30:num_pc;
-loop_array          = 2:5:num_pc;
+loop_array          = 2:2:16;
 
 % For loop that loads each point cloud, and adjusting using the gps
 % and imu data. "i" is the selected point cloud as per the loop_array 
@@ -189,8 +206,7 @@ for i = loop_array
 %     rot_mat = quat2rotm(quat); euler = quat2eul(quat);
 
     % Setting offset
-    PCD_ROT_OFFSET                      =  rotz(0);
-    ROTATION_UPDATE                     = rotx(pitch(store_ind)) * roty(roll(store_ind)) * rotz(track(store_ind));
+    ROTATION_UPDATE                     = rotx(pitch(store_ind)) * roty(roll(store_ind)) * rotz(track(store_ind) - PCD_ROT_OFFSET);
 
     
     %% De-bugging time stamps
@@ -199,30 +215,47 @@ for i = loop_array
     %% Adjust point cloud
 
     % Step 1: Load pc
-    % Step 2: Add GPS 
-    % Step 3: Use rotatepoint to adjust the point cloud
+    % Step 2: Resolve LiDAR and GPS Reference Frame
+    % Step 3: Add Orientation 
+    % Step 4: Add GPS Offset
     
+    %% Step 1 - Load PC
     % Loading point cloud into friendly format
     xyzi                                = [double(LiDAR_TimeTable.Data(i).Location) double(LiDAR_TimeTable.Data(i).Intensity)];
     
     % Removing nans and infs from the array
     xyzi                                = xyzi( ~any( isnan(xyzi) | isinf(xyzi), 2),:);
     
-    % Applying the rotation
-    xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * ROTATION_UPDATE * PCD_ROT_OFFSET;
+    % Swapping X and Y axis
+    xyzi                                = [xyzi(:,2), -xyzi(:,1), xyzi(:,3) xyzi(:,4)];
     
+    %% Step 2 - Resolve LiDAR and GPS Reference Frame
+    
+    % Adding the offset values [Y X Z]
+    xyzi(:,1)                           = xyzi(:,1) + gps_lidar_diff(1);
+    xyzi(:,2)                           = xyzi(:,2) + gps_lidar_diff(2);
+    xyzi(:,3)                           = xyzi(:,3) + gps_lidar_diff(3);
+    
+    %% Step 3 - Add Orientation
+    
+    % Applying the rotation
+    xyzi(:,1:3)                         = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * ROTATION_UPDATE;
+
+    %% Step 4 - Add GPS Offset
+        
     % Adding GPS offset
-    xyzi(:,1)            = (xyzi(:,1)) + dx_from_origin(store_ind);
-    xyzi(:,2)            = (xyzi(:,2)) + dy_from_origin(store_ind);
-    xyzi(:,3)            = (xyzi(:,3)) + alt(store_ind);
-%     xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * PCD_ROT_OFFSET;
+    xyzi(:,1)                           = (xyzi(:,1)) + dx_from_origin(store_ind);
+    xyzi(:,2)                           = (xyzi(:,2)) + dy_from_origin(store_ind);
+    xyzi(:,3)                           = (xyzi(:,3)) + alt(store_ind);
     
     % Storing dx, dy for debugging
     dxy_store = [dxy_store; dx_from_origin(store_ind) dy_from_origin(store_ind) alt(store_ind)];
     
     %% Apphend to overall point cloud
+    
 
-    XYZI_Apphend{store_ind}      = xyzi;
+
+    XYZI_Apphend{store_ind}             = xyzi;
 
     %% Progress bar
 
@@ -244,6 +277,9 @@ end
 % Closing the progress bar
 close(f)
 
+% Generating plot array
+plot_array = 1:1:store_ind;
+
 disp('Processing complete, exporting array to point cloud object...')
 
 
@@ -254,13 +290,15 @@ disp('Point cloud object created. Saving to .pcd...')
 disp('Point cloud saved to .pcd! Plotting figures...')
 
 %% Scatter plot
-color_array = [1 0 0 ; 0 1 0 ; 0 0 1 ; 0 1 1 ; 1 0 1 ; 1 1 0 ; 0 0 0];
-
-j = 1;
-
-% count = 1;
-% figure
-% for i = loop_array
+% color_array = [1 0 0 ; 0 1 0 ; 0 0 1 ; 0 1 1 ; 1 0 1 ; 1 1 0 ; 0 0 0];
+% 
+% j = 1;
+% 
+% figure;
+% 
+% hold all
+% 
+% for i = plot_array
 %     
 %     if i == length(color_array(:,1))
 %         j = 1;
@@ -276,8 +314,7 @@ j = 1;
 %     scattet_plt.MarkerEdgeColor = color_ind;
 %     scattet_plt.Marker = '.';
 %     
-%     hold on
-%     origin_plt = scatter3(dx(i), dy(i), alt(i));
+%     origin_plt = scatter3(dx_from_origin(i), dy_from_origin(i), alt(i));
 % %     origin_plt = scatter3(dxy_store(count,1), dxy_store(count,2), 0);
 %     origin_plt.MarkerFaceColor = color_ind;
 %     origin_plt.MarkerEdgeColor = color_ind;
@@ -289,72 +326,73 @@ j = 1;
 %     axis equal
 %     
 %     j = j + 1;
-% %     count = count + 1;
-%     
-%     hold on
+% 
 % 
 % end
+% 
+% hold off
 
 % legend
 
 %% PCD
 
+% Initilizing the big xyzi array
 Export_XYZI = [];
 
-figure
+figure;
 
-for i = 1:1:store_ind-1
-        
-i
-        Export_XYZI = [Export_XYZI; XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3) XYZI_Apphend{i}(:,4)];
-
+for i = plot_array
+    
+    Export_XYZI = [Export_XYZI; XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3) XYZI_Apphend{i}(:,4)];
     
 end
 
-% hold on
-% Export_Cloud    = pointCloud([Export_XYZI(:,1) Export_XYZI(:,2) Export_XYZI(:,3)], 'Intensity', Export_XYZI(:,4));
-% plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
-% scatter3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3))
-% scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
-% scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
-% pcshow(Export_Cloud)
-% hold off
-
-%% INCOMPLETE: Step-by-step visulaizer for verification
-
-hold on
-
-for i = 1:1:store_ind
-    
-        if size(XYZI_Apphend{i}) ~= [0,0]
-            
-            loop_cloud = pointCloud([XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3)], 'Intensity', XYZI_Apphend{i}(:,4));
-
-%             Export_Cloud    = pointCloud([Export_XYZI(i,1) Export_XYZI(i,2) Export_XYZI(i,3)], 'Intensity', Export_XYZI(:,4));
-            % plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
-            scatter3(dxy_store(i,1),dxy_store(i,2),dxy_store(i,3))
-            scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
-            scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
-            pcshow(loop_cloud)
-
-        end
-        
-        pause
-
-end
-
+hold all
+Export_Cloud    = pointCloud([Export_XYZI(:,1) Export_XYZI(:,2) Export_XYZI(:,3)], 'Intensity', Export_XYZI(:,4));
+plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
+scatter3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'o','MarkerEdgeColor','yellow','LineWidth',3)
+scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','green', 'MarkerEdgeColor','green','LineWidth',3)
+scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','red','MarkerEdgeColor','red','LineWidth',3)
+pcshow(Export_Cloud)
+view([0 0 90])
+xlabel('x')
+ylabel('y')
+zlabel('z')
 hold off
 
-%% Making the plots prettier
-% gps_time_diff   = nonzeros(gps_time_diff);
-% dist            = nonzeros(dist);
-% duration_gps    = nonzeros(duration_gps);
-% duration_lidar  = nonzeros(duration_lidar);
-% speed           = nonzeros(speed);
-% lat             = nonzeros(lat);
-% lon             = nonzeros(lon); 
+%% Step-by-step visulaizer for verification
 
-plot_array = 1:1:store_ind;
+
+if loop_bool
+    
+    figure; 
+
+    hold all
+
+    for i = 1:1:store_ind
+
+            if size(XYZI_Apphend{i}) ~= [0,0]
+
+                loop_cloud = pointCloud([XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3)], 'Intensity', XYZI_Apphend{i}(:,4));
+
+    %             Export_Cloud    = pointCloud([Export_XYZI(i,1) Export_XYZI(i,2) Export_XYZI(i,3)], 'Intensity', Export_XYZI(:,4));
+                % plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
+                scatter3(dxy_store(i,1),dxy_store(i,2),dxy_store(i,3))
+                scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','green')
+                scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','red')
+                pcshow(loop_cloud)
+
+            end
+
+            pause
+
+    end
+
+    hold off
+
+end
+
+%% Making the plots prettier
 
 figure
 tiledlayout(2,2);
@@ -465,7 +503,7 @@ title('DT Check')
 hold off
 
 nexttile
-plot(speed)
+plot(speed_gps)
 xlabel('Point Cloud Number')
 ylabel('Speed (m/s)')
 title('Speed')
@@ -478,7 +516,7 @@ nexttile
 geoplot(lat,lon,'.','LineWidth', 3)
 
 nexttile
-scatter(dxdydz(:,1),dxdydz(:,2), '.', 'LineWidth', 3)
+scatter(dy_from_origin,dx_from_origin, '.', 'LineWidth', 3)
 axis equal
 
 nexttile
