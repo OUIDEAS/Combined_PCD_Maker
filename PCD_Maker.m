@@ -392,39 +392,9 @@ if loop_bool
 
 end
 
-%% Making the plots prettier
 
-figure
-tiledlayout(2,2);
+%% GPS to Meters
 
-nexttile
-plot(plot_array,gps_time_diff,'.-')
-xlabel('Point Cloud Number')
-ylabel('Time (s)')
-title('Time stamp difference')
-
-nexttile
-plot(plot_array,dist,'.-')
-xlabel('Point Cloud Number')
-ylabel('Dist (m)')
-title('Distance Traveled')
-
-nexttile
-plot(plot_array,duration_gps,'ro-')
-hold on
-plot(plot_array,duration_lidar,'b.-')
-xlabel('Point Cloud Number')
-ylabel('Time Stamp (s)')
-legend('GPS','LiDAR')
-title('DT Check')
-hold off
-
-nexttile
-plot(plot_array,speed,'.-')
-xlabel('Point Cloud Number')
-ylabel('Speed (m/s)')
-title('Speed')
-%%
 figure
 tiledlayout(1,2);
 
@@ -436,6 +406,7 @@ gp.LineStyle = '-.';
 nexttile
 scatter(dy_from_origin,dx_from_origin, 'LineWidth', 10)
 axis equal
+grid on
 
 % %%
 % 
@@ -476,7 +447,6 @@ axis equal
 
 %% Misc Plots
 
-
 figure
 tiledlayout(2,2);
 
@@ -485,12 +455,14 @@ plot(gps_time_diff)
 xlabel('Point Cloud Number')
 ylabel('Time (s)')
 title('Time stamp difference')
+grid on
 
 nexttile
 plot(dist)
 xlabel('Point Cloud Number')
 ylabel('Dist (m)')
 title('Distance Traveled')
+grid on
 
 nexttile
 plot(duration_gps,'r.-')
@@ -501,13 +473,16 @@ ylabel('Time Stamp (s)')
 legend('GPS','LiDAR')
 title('DT Check')
 hold off
+grid on
 
 nexttile
 plot(speed_gps)
 xlabel('Point Cloud Number')
 ylabel('Speed (m/s)')
 title('Speed')
+grid on
 
+%% GPS Verify
 
 figure
 tiledlayout(1,3);
@@ -518,6 +493,7 @@ geoplot(lat,lon,'.','LineWidth', 3)
 nexttile
 scatter(dy_from_origin,dx_from_origin, '.', 'LineWidth', 3)
 axis equal
+grid on
 
 nexttile
 geoplot(lat_post, lon_post, '.', 'LineWidth', 3)
