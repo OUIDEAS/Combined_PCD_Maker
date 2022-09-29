@@ -2,19 +2,26 @@
 % LiDAR_GPS_IMU_Timetable_Maker function and creates a combined point
 % cloud. 
 
+%% Clearing Workspace
+
+% If the progress bar is open it will close it before clearing workspace
+if exist('f','class')
+    close(f)
+end
 
 clear all; close all; clc;
+
+%% Opening Data Files
 
 % Querey for files
 % gps_mat     = uigetfile('*.mat','Grab GPS file');
 % imu_mat     = uigetfile('*.mat','Grab IMU file');
 % lidar_mat   = uigetfile('*.mat','Grab LiDAR file');
-%  
 
-gps_mat = 'Data/GPS_TimeTable.mat';
-imu_mat = 'Data/IMU_TimeTable.mat';
-lidar_mat = 'Data/LiDAR_TimeTable.mat';
-   
+% Hard code
+gps_mat = '/media/autobuntu/chonk/chonk/git_repos/PCD_Map_Maker_2/Data/Plians_1/GPS_TimeTable.mat';
+imu_mat = '/media/autobuntu/chonk/chonk/git_repos/PCD_Map_Maker_2/Data/Plians_1/IMU_TimeTable.mat';
+lidar_mat = '/media/autobuntu/chonk/chonk/git_repos/PCD_Map_Maker_2/Data/Plians_1/LiDAR_TimeTable.mat';
 
 % Load Files
 disp('Loading files...')
@@ -23,137 +30,167 @@ load(imu_mat);
 load(lidar_mat);
 disp('Loading complete!')
 
+%% Obtaining export location
+
 % Querey for export location
 % export_dir      = uigetdir( '','Grab PCD Export Directory');
 
+%% Variable Initiation
 
-%% Get number of point cloud files
-num_pc              = length(LiDAR_TimeTable.Data);
+% Storage index - used for storing all variables. Seperate from the loop
+% counter, which looks at the length of the index of the point clouds
+store_ind                   = 1;
 
-close all; clc;
+% Plotting stuff **EVALUATE LATER**
+dxy_store                   = [];
 
-% VAR INIT SECTION
-
-% PCD_ROT_OFFSET      = rotz(-90);
-dxdydz              = [];
-dxy_store           = [];
-unit_vector_ll      = [0.00001 0 0]; %[x y z]
-point_coords        = [];
-unit_vector         = [1 0 0];
-
+% Unit vectors
+unit_vector                 = [1 0 0];
+unit_vector_ll              = [0.00001 0 0]; %[x y z]
 
 % Variable for converting GPS coordinates into meters
-wgs84               = wgs84Ellipsoid;
+wgs84                       = wgs84Ellipsoid;
 
-% For loop for loading each point cloud, and adjusting using the gps
-% and imu data
+% Initilizing variables outside of the main loop for cleanliness
+
+% Distance from the origin in meters
+dx_from_origin(store_ind)   = 0; 
+dy_from_origin(store_ind)   = 0;
+dz_from_origin(store_ind)   = 0;
+dxdydz                      = [dx_from_origin(store_ind) dy_from_origin(store_ind) dz_from_origin(store_ind)];
+
+% Distance between the current and previous dx and dy, used to calculate
+% speed along with the time stamps from the gps topic
+dist(store_ind)             = 0;
+
+% Time between the current and previous dx and dy timestamps, used to
+% calculate speed along with the distance
+duration_gps(store_ind)     = 0;
+
+% Speed calculated from the distance 
+speed(store_ind)            = 0;
+
+% Time difference between the current and previous lidar time stamps
+duration_lidar(store_ind)   = 0;
+
+%% Processing loaded data
 
 disp('Processing...')
 
+% Progress bar
 f = waitbar(0,'1','Name','Doing Da Data');
 
+% Caluclating number of point clouds in the LiDAR data mat file
+num_pc              = length(LiDAR_TimeTable.Data);
+
+% Creating an array to determine which point clouds are used
 % loop_array = 1:1:num_pc;
 % loop_array = 2:30:num_pc;
-loop_array = 2:5:num_pc;
+loop_array          = 2:5:num_pc;
+
+% For loop that loads each point cloud, and adjusting using the gps
+% and imu data. "i" is the selected point cloud as per the loop_array 
+% variable, and store_ind is the indexing variable used to store all other 
+% variables
 
 for i = loop_array
 
-%         % Safety, I feel better knowing it's here
-%         if i > num_pc
-%             disp('wow I''m glad I put this here'); break;
-%         end
-
+    %% Loop Safety
+    
+    if i > num_pc
+        disp('wow I''m glad I put this here'); break;
+    end
 
     %% HANDLING GPS
-
-    [gps_time_diff(i),gps_ind]  = min(abs(GPS_TimeTable.Time(:) - LiDAR_TimeTable.Time(i)));
-   
-    gps_ind                     = gps_ind + 1;
-   
-    gps_closest_time(i)         = GPS_TimeTable.Time(gps_ind);
-    lidar_time_stamp(i)         = LiDAR_TimeTable.Time(i);
+    
+    % Finding the smallest time difference between the current lidar time
+    % stamp and the any gps time stamp. The index with the smallest time is
+    % selected
+    [gps_time_diff(store_ind), gps_ind]  = min(abs(GPS_TimeTable.Time(:) - LiDAR_TimeTable.Time(i)));
+    
+    % The gps index is increased by one to increase odds of getting a good
+    % gps selection
+    gps_ind                             = gps_ind + 1;
+    
+    % The gps and lidar time stamps are saved
+    gps_closest_time(store_ind)         = GPS_TimeTable.Time(gps_ind);
+    lidar_time_stamp(store_ind)         = LiDAR_TimeTable.Time(i);
         
     % Set vars
-    lat(i)                      = GPS_TimeTable.Data(gps_ind,1);
-    lon(i)                      = GPS_TimeTable.Data(gps_ind,2);
-    alt(i)                      = GPS_TimeTable.Data(gps_ind,3);
-    track(i)                    = GPS_TimeTable.Data(gps_ind,4);
-    
+    lat(store_ind)                      = GPS_TimeTable.Data(gps_ind,1);
+    lon(store_ind)                      = GPS_TimeTable.Data(gps_ind,2);
+    alt(store_ind)                      = GPS_TimeTable.Data(gps_ind,3);
+    pitch(store_ind)                    = GPS_TimeTable.Data(gps_ind,4);
+    roll(store_ind)                     = GPS_TimeTable.Data(gps_ind,5);
+    track(store_ind)                    = GPS_TimeTable.Data(gps_ind,6);
    
     % Setting Local Coords for the first thing in the list        
-    if i == 2
+    if store_ind == 1
     
         % Starting point
-        lat_start                   = double(lat(i));
-        lon_start                   = double(lon(i));
-        alt_start                   = double(alt(i));
+        lat_start                           = double(lat(store_ind));
+        lon_start                           = double(lon(store_ind));
+        alt_start                           = double(alt(store_ind));
         
         % Pseudo starting point for the posision check: The first point
         % could probably be eliminated 
-        lat_post(1)                 = double(lat(i));
-        lon_post(1)                 = double(lon(i));
-        alt_post(1)                 = double(alt(i));
-        
-        dx(i)                       = 0; 
-        dy(i)                       = 0;
-        dz(i)                       = 0;
-        
-        vect(i)                     = 0;
-        
-        dxdydz                      = [dxdydz; dx(i) dy(i) dz(i)];
-        
-        vect(i)                     = 0;
-        speed(i)                    = 0;
-        
-        duration_gps(i)             = 0;
-        duration_lidar(i)           = 0;
+        lat_post(store_ind)                 = double(lat(store_ind));
+        lon_post(store_ind)                 = double(lon(store_ind));
+        alt_post(store_ind)                 = double(alt(store_ind));
         
     else
+        
+        % Grabbing the distance in meters from the origin using a built-in
+        % matlab function that converts lat lon and alt to dx dy dz.
+        [dx_from_origin(store_ind), dy_from_origin(store_ind), dz_from_origin(store_ind)] = geodetic2ned(lat(store_ind), lon(store_ind), alt(store_ind), lat_start, lon_start, alt_start, wgs84);
+        
+        % Temporary code to test flipping variables
+%         dx_from_origin(store_ind) = dx_from_origin(store_ind);
+%         dy_from_origin(store_ind) = dy_from_origin(store_ind);
+%         dz_from_origin(store_ind) = dz_from_origin(store_ind);
+        
+        % Calculating distance from origin
+        dist(store_ind)                     = sqrt(dx_from_origin(store_ind)^2 + dy_from_origin(store_ind)^2 + dz_from_origin(store_ind)^2);      
 
-        [dx(i), dy(i), dz(i)]       = geodetic2ned(lat(i), lon(i), alt(i), lat_start, lon_start, alt_start, wgs84);
-        dx(i) = -dx(i);
-        dy(i) = -dy(i);
-        dz(i) = dz(i);
-        vect(i)                     = sqrt(dx(i)^2 + dy(i)^2 + dz(i)^2);
+        % Calculating the change in distance from origin
+        d_vect(store_ind)                   = dist(store_ind) - dist(store_ind-1);
         
-        d_vect(i)                   = vect(i) - vect(i-1);
+        % Calculating time differences between the current and previous gps
+        % and lidar time stamps
+        duration_gps(store_ind)             = gps_closest_time(store_ind) - gps_closest_time(store_ind-1);
+        duration_lidar(store_ind)           = lidar_time_stamp(store_ind) - lidar_time_stamp(store_ind-1);
         
-        duration_gps(i)             = gps_closest_time(i) - gps_closest_time(i-1);
-        duration_lidar(i)           = lidar_time_stamp(i) - lidar_time_stamp(i-1);
+        % Calculating speed
+        speed_gps(store_ind)                = d_vect(store_ind) / duration_gps(store_ind);
         
-        speed(i)                    = d_vect(i) / duration_gps(i);
-        
-        [lat_post(i), lon_post(i), h_post(i)] = ned2geodetic(dx(i), dy(i), dz(i), lat_start, lon_start, alt_start, wgs84);
+        % Verification of the gps conversion process: plugging in the
+        % dx dy dz from the origin and obtaining the lat lon and alt
+        [lat_post(store_ind), lon_post(store_ind), h_post(store_ind)] = ned2geodetic(dx_from_origin(store_ind), dy_from_origin(store_ind), dz_from_origin(store_ind), lat_start, lon_start, alt_start, wgs84);
         
     end
+        
+    % Finding the smallest time difference between the current lidar time
+    % stamp and the any imu time stamp. The index with the smallest time is
+    % selected
+    [imu_time_diff(store_ind), imu_ind] = min(abs(IMU_TimeTable.Time(:) - LiDAR_TimeTable.Time(i)));
+    imu_closest_time(store_ind)         = IMU_TimeTable.Time(imu_ind,:);
     
-%     dxdydz = [dxdydz; dx(i) dy(i) dz(i)];
+    % The gps index is increased by one to increase odds of getting a good
+    % imu selection
+    imu_ind                             = imu_ind + 1;
     
-    % Closest IMU time point
-    [imu_time_diff(i),imu_ind]  = min(abs(IMU_TimeTable.Time(:) - LiDAR_TimeTable.Time(i)));
-    imu_closest_time(i)         = IMU_TimeTable.Time(imu_ind,:);
-    
-    % Grabbing the Quaternion
-    quat_temp                   = [IMU_TimeTable.Data(imu_ind,:)];
+    % Grabbing the Quaternion from the data file (W X Y Z)
+    quat_temp                           = [IMU_TimeTable.Data(imu_ind,:)];
 
-    % W X Y Z
-    quat                        = quaternion(quat_temp(1), quat_temp(2), quat_temp(3), quat_temp(4));
+    % Getting the quaternion object (W X Y Z)
+    quat                                = quaternion(quat_temp(1), quat_temp(2), quat_temp(3), quat_temp(4));
     
-    rot_mat                     = quat2rotm(quat);
-    
-    euler                       = quat2eul(quat);
-    
-    new_point                   = unit_vector * rot_mat;
-    
-    e_lat(i)                       = lat(i) + new_point(1);
-    e_lon(i)                       = lon(i) + new_point(2);
-    e_h(i)                         = alt(i) + new_point(3);
-    
-    point_coords                = [point_coords; lat(i) lon(i) e_lat(i) e_lon(i)];
-    
+    % Alternatives
+%     rot_mat = quat2rotm(quat); euler = quat2eul(quat);
+
     % Setting offset
-    PCD_ROT_OFFSET              =  rotz(90);
-    ROTATION_UPDATE = rotx(0) * roty(0) * rotz(track(i) + 90);
+    PCD_ROT_OFFSET                      =  rotz(0);
+    ROTATION_UPDATE                     = rotx(pitch(store_ind)) * roty(roll(store_ind)) * rotz(track(store_ind));
 
     
     %% De-bugging time stamps
@@ -166,61 +203,45 @@ for i = loop_array
     % Step 3: Use rotatepoint to adjust the point cloud
     
     % Loading point cloud into friendly format
-    xyzi                = [double(LiDAR_TimeTable.Data(i).Location) double(LiDAR_TimeTable.Data(i).Intensity)];
+    xyzi                                = [double(LiDAR_TimeTable.Data(i).Location) double(LiDAR_TimeTable.Data(i).Intensity)];
     
-    % Removing nans and infsspeed
-    xyzi                = xyzi( ~any( isnan(xyzi) | isinf(xyzi), 2),:);
+    % Removing nans and infs from the array
+    xyzi                                = xyzi( ~any( isnan(xyzi) | isinf(xyzi), 2),:);
     
-    % Removing zeros
-    % Necessary? Put off for now.........
-%     
-%     % Swapping the X, Y because of how it's orientated on the van
-%     xyzi_temp           = [xyzi(:,2) xyzi(:,1) xyzi(:,3) xyzi(:,4)];
-%     xyzi                = xyzi_temp;
-    
-    % Rotating the point cloud STEP 1: Rotate the cloud 90 degrees
-    % counter clockwise to line up with the IMU frame
-%     for j = 1:1:length(xyzi(:,1))
-% %         xyzi(j,1:3)         = xyzi(j,1:3) * PCD_ROT_OFFSET;
-%         
-%         xyzi(j,1:3)         = [xyzi(2) xyzi(1) xyzi(3)] * PCD_ROT_OFFSET;
-%         
-%     end
-
-    
-    
-    % Rotating the point cloud STEP 2: Use the IMU to adjust the
-    % orientation of the point cloud
-%     xyzi(:,1:3)          = rotatepoint(quat,[xyzi(:,2) xyzi(:,1) xyzi(:,3)]);
-    
-%     for k = 1:1:length(xyzi(:,1))
-%         xyzi(k,1:3)         = Rot_Mat * xyzi(k,1:3)';
-%     end
-
+    % Applying the rotation
     xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * ROTATION_UPDATE * PCD_ROT_OFFSET;
     
     % Adding GPS offset
-    xyzi(:,1)            = (xyzi(:,1)) + dx(i);
-    xyzi(:,2)            = (xyzi(:,2)) + dy(i);
-    xyzi(:,3)            = (xyzi(:,3)) + alt(i);
+    xyzi(:,1)            = (xyzi(:,1)) + dx_from_origin(store_ind);
+    xyzi(:,2)            = (xyzi(:,2)) + dy_from_origin(store_ind);
+    xyzi(:,3)            = (xyzi(:,3)) + alt(store_ind);
 %     xyzi(:,1:3)     = [xyzi(:,1), xyzi(:,2), xyzi(:,3)] * PCD_ROT_OFFSET;
     
     % Storing dx, dy for debugging
-    dxy_store = [dxy_store; dx(i) dy(i) alt(i)];
+    dxy_store = [dxy_store; dx_from_origin(store_ind) dy_from_origin(store_ind) alt(store_ind)];
     
     %% Apphend to overall point cloud
 
-    XYZI_Apphend{i}      = xyzi;
+    XYZI_Apphend{store_ind}      = xyzi;
 
-    %% Weight bar
+    %% Progress bar
 
-    % You heard me
-        waitbar(i/(loop_array(end)),f,sprintf('%1.1f',(i/(loop_array(end))*100)))
+    % Updateing progress bar
+    waitbar(store_ind/(loop_array(end)),f,sprintf('%1.1f',(store_ind/(loop_array(end))*100)))
 
+    %% Clearing vars for safety
+    
     clear quat
+    
+    %% Increasing the counter of the storage index
+    
+    if i ~= loop_array(end)
+        store_ind = store_ind + 1;
+    end
 
 end
 
+% Closing the progress bar
 close(f)
 
 disp('Processing complete, exporting array to point cloud object...')
@@ -231,10 +252,12 @@ disp('Point cloud object created. Saving to .pcd...')
 %     FileName = string(export_dir) + "/Export_Cloud.pcd";
 
 disp('Point cloud saved to .pcd! Plotting figures...')
-%%
+
+%% Scatter plot
 color_array = [1 0 0 ; 0 1 0 ; 0 0 1 ; 0 1 1 ; 1 0 1 ; 1 1 0 ; 0 0 0];
 
 j = 1;
+
 % count = 1;
 % figure
 % for i = loop_array
@@ -274,64 +297,84 @@ j = 1;
 
 % legend
 
-%%
-
-figure
-
-plot(track)
-
 %% PCD
 
 Export_XYZI = [];
 
 figure
 
-for i = 1:1:length(XYZI_Apphend)
+for i = 1:1:store_ind-1
         
-    if size(XYZI_Apphend{i}) ~= [0,0]
-    
+i
         Export_XYZI = [Export_XYZI; XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3) XYZI_Apphend{i}(:,4)];
-    
-    end
+
     
 end
 
+% hold on
+% Export_Cloud    = pointCloud([Export_XYZI(:,1) Export_XYZI(:,2) Export_XYZI(:,3)], 'Intensity', Export_XYZI(:,4));
+% plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
+% scatter3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3))
+% scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
+% scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
+% pcshow(Export_Cloud)
+% hold off
+
+%% INCOMPLETE: Step-by-step visulaizer for verification
+
 hold on
-Export_Cloud    = pointCloud([Export_XYZI(:,1) Export_XYZI(:,2) Export_XYZI(:,3)], 'Intensity', Export_XYZI(:,4));
-plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
-scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
-scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
-pcshow(Export_Cloud)
+
+for i = 1:1:store_ind
+    
+        if size(XYZI_Apphend{i}) ~= [0,0]
+            
+            loop_cloud = pointCloud([XYZI_Apphend{i}(:,1) XYZI_Apphend{i}(:,2) XYZI_Apphend{i}(:,3)], 'Intensity', XYZI_Apphend{i}(:,4));
+
+%             Export_Cloud    = pointCloud([Export_XYZI(i,1) Export_XYZI(i,2) Export_XYZI(i,3)], 'Intensity', Export_XYZI(:,4));
+            % plot3(dxy_store(:,1),dxy_store(:,2),dxy_store(:,3),'--','Color','c','LineWidth',6)
+            scatter3(dxy_store(i,1),dxy_store(i,2),dxy_store(i,3))
+            scatter3(dxy_store(1,1),dxy_store(1,2),dxy_store(1,3),420,'*','MarkerFaceColor','yellow')
+            scatter3(dxy_store(end,1),dxy_store(end,2),dxy_store(end,3),420,'*','MarkerFaceColor','magenta')
+            pcshow(loop_cloud)
+
+        end
+        
+        pause
+
+end
+
 hold off
 
 %% Making the plots prettier
-gps_time_diff   = nonzeros(gps_time_diff);
-vect            = nonzeros(vect);
-duration_gps    = nonzeros(duration_gps);
-duration_lidar  = nonzeros(duration_lidar);
-speed           = nonzeros(speed);
-lat             = nonzeros(lat);
-lon             = nonzeros(lon); 
+% gps_time_diff   = nonzeros(gps_time_diff);
+% dist            = nonzeros(dist);
+% duration_gps    = nonzeros(duration_gps);
+% duration_lidar  = nonzeros(duration_lidar);
+% speed           = nonzeros(speed);
+% lat             = nonzeros(lat);
+% lon             = nonzeros(lon); 
+
+plot_array = 1:1:store_ind;
 
 figure
 tiledlayout(2,2);
 
 nexttile
-plot(loop_array,gps_time_diff,'.-')
+plot(plot_array,gps_time_diff,'.-')
 xlabel('Point Cloud Number')
 ylabel('Time (s)')
 title('Time stamp difference')
 
 nexttile
-plot(loop_array(2:end),vect,'.-')
+plot(plot_array,dist,'.-')
 xlabel('Point Cloud Number')
 ylabel('Dist (m)')
 title('Distance Traveled')
 
 nexttile
-plot(loop_array(2:end),duration_gps,'ro-')
+plot(plot_array,duration_gps,'ro-')
 hold on
-plot(loop_array(2:end),duration_lidar,'b.-')
+plot(plot_array,duration_lidar,'b.-')
 xlabel('Point Cloud Number')
 ylabel('Time Stamp (s)')
 legend('GPS','LiDAR')
@@ -339,7 +382,7 @@ title('DT Check')
 hold off
 
 nexttile
-plot(loop_array(2:end),speed,'.-')
+plot(plot_array,speed,'.-')
 xlabel('Point Cloud Number')
 ylabel('Speed (m/s)')
 title('Speed')
@@ -353,7 +396,7 @@ gp.LineWidth = 5;
 gp.LineStyle = '-.';
 
 nexttile
-scatter(dy,dx, 'LineWidth', 10)
+scatter(dy_from_origin,dx_from_origin, 'LineWidth', 10)
 axis equal
 
 % %%
@@ -392,7 +435,9 @@ axis equal
 % 
 % xlim([xlim_low xlim_high]);
 % ylim([ylim_low ylim_high]);
-%%
+
+%% Misc Plots
+
 
 figure
 tiledlayout(2,2);
@@ -404,15 +449,15 @@ ylabel('Time (s)')
 title('Time stamp difference')
 
 nexttile
-plot(vect)
+plot(dist)
 xlabel('Point Cloud Number')
 ylabel('Dist (m)')
 title('Distance Traveled')
 
 nexttile
-plot(duration_gps(2:end),'r.-')
+plot(duration_gps,'r.-')
 hold on
-plot(duration_lidar(2:end),'b.-')
+plot(duration_lidar,'b.-')
 xlabel('Point Cloud Number')
 ylabel('Time Stamp (s)')
 legend('GPS','LiDAR')
@@ -420,7 +465,7 @@ title('DT Check')
 hold off
 
 nexttile
-plot(speed(2:end))
+plot(speed)
 xlabel('Point Cloud Number')
 ylabel('Speed (m/s)')
 title('Speed')
