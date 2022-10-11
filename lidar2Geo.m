@@ -10,9 +10,13 @@ gps_to_lidar_diff  = [(LiDAR_Ref_Frame(1) - IMU_Ref_Frame(1)), ...
                       (LiDAR_Ref_Frame(2) - IMU_Ref_Frame(2)), ...
                       (LiDAR_Ref_Frame(3) - IMU_Ref_Frame(3))]; 
 
-
+% file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/shortened_Simms/2022-10-11-09-24-00.bag';
+% file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/shortened_Simms/2022-10-11-09-28-18.bag';
+file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/shortened_Simms/2022-10-11-09-29-34.bag';
+% file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/shortened_Simms/2022-10-11-09-31-55.bag';
+% file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/shortened_Simms/2022-10-11-09-33-39.bag';
 % file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-12-25-42.bag';
-file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-14-36-02.bag';
+% file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-14-36-02.bag';
 % file = '/media/travis/moleski/FOR_RHETT/2022-09-20-10-58-09.bag';
 % file = '/media/travis/moleski/ROSBAGS_WILHELM/2022-03-01-14-13-06.bag';
 
@@ -27,7 +31,7 @@ gps_msgs = readMessages(gps_topic, 'DataFormat', 'struct');
 
 [indexes, fromTimes, toTimes, diffs] = matchTimestamps(lidar_msgs, gps_msgs);
 
-%Find which GPS message matches the first scan 
+%Find which GPS message matches the first scan (
 matchedLidar = lidar_msgs{1};
 matchedGps_init = gps_msgs{indexes(1)};
 
@@ -36,8 +40,8 @@ origin = [matchedGps_init.Latitude, matchedGps_init.Longitude, matchedGps_init.A
 [xEast_init, yNorth_init, zUp_init] = latlon2local(matchedGps_init.Latitude, matchedGps_init.Longitude, matchedGps_init.Altitude, origin);
 
 %  CONVERT TO LIDAR FRAME:
-% theta = matchedGps_init.Track;
-theta = 0;
+theta = matchedGps_init.Track + 180;
+% theta = 0;
 gps2lidar = [ cosd(90) sind(90) 0;
              -sind(90) cosd(90) 0;
              0       0          1];
@@ -47,7 +51,7 @@ LidarOffset2gps = [ cosd(90) -sind(90)  0;
               0        0           1]; 
 
 groundTruthTrajectory    = [xEast_init, yNorth_init, zUp_init] * gps2lidar;
-gps_to_lidar_diff_update = gps_to_lidar_diff * LidarOffset2gps * (rotz(90)*roty(0)*rotx(0));
+gps_to_lidar_diff_update = gps_to_lidar_diff * LidarOffset2gps * (rotz(90-theta)*roty(0)*rotx(0));
 
 LidarxEast_init =   groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
 LidaryNorth_init =  groundTruthTrajectory(2)  + gps_to_lidar_diff_update(2);
@@ -88,7 +92,7 @@ for cloud = 1:length(lidar_msgs)
     xyz_cloud = xyz_cloud( ~any( isnan(xyz_cloud) | isinf(xyz_cloud), 2),:);
     
     
-    pc_rot    = rotz(0) * roty(0) * rotx(0);
+    pc_rot    = rotz(90-theta) * roty(0) * rotx(0);
     tform     = rigid3d(pc_rot, [lidarTrajectory(1) lidarTrajectory(2) lidarTrajectory(3)]);
     
     pointClouXYZI_curr = pointCloud([xyz_cloud(:,1), xyz_cloud(:,2), xyz_cloud(:,3)]);
@@ -102,10 +106,10 @@ for cloud = 1:length(lidar_msgs)
     
 %     cloud
 %     length(lidar_msgs)
-
-    if cloud > 60
-        break
-    end
+% 
+%     if cloud > 60
+%         break
+%     end
 end
 
 hold on
@@ -123,3 +127,5 @@ scatter3(gps_position_store(end,1),gps_position_store(end,2),gps_position_store(
 scatter3(gps_position_store(:,1),gps_position_store(:,2),gps_position_store(:,3),50,'^','MarkerFaceColor','magenta')
 scatter3(lidar_position_store(:,1),lidar_position_store(:,2),lidar_position_store(:,3),50,'^','MarkerFaceColor','cyan')
 pcshow(pointCloudList);
+
+view([0 0 90])
