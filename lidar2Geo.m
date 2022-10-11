@@ -11,9 +11,9 @@ gps_to_lidar_diff  = [(LiDAR_Ref_Frame(1) - IMU_Ref_Frame(1)), ...
                       (LiDAR_Ref_Frame(3) - IMU_Ref_Frame(3))]; 
 
 
-file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-12-25-42.bag';
-% file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-14-36-02.bag';
-% file = '/media/travis/moleski/FOR_RHETT/2022-09-20-10-58-09.bag'
+% file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-12-25-42.bag';
+file = '/media/travis/moleski/ROSBAGS_WILHELM/trimmed/2022-10-07-14-36-02.bag';
+% file = '/media/travis/moleski/FOR_RHETT/2022-09-20-10-58-09.bag';
 % file = '/media/travis/moleski/ROSBAGS_WILHELM/2022-03-01-14-13-06.bag';
 
 bag =  rosbag(file);
@@ -36,76 +36,76 @@ origin = [matchedGps_init.Latitude, matchedGps_init.Longitude, matchedGps_init.A
 [xEast_init, yNorth_init, zUp_init] = latlon2local(matchedGps_init.Latitude, matchedGps_init.Longitude, matchedGps_init.Altitude, origin);
 
 %  CONVERT TO LIDAR FRAME:
+% theta = matchedGps_init.Track;
 theta = 0;
-R = [ cosd(90-theta) sind(90-theta) 0;
-     -sind(90-theta) cosd(90-theta) 0;
-     0               0              1];
-R_diff = [ cosd(90-theta) -sind(90-theta) 0;
-           sind(90-theta) cosd(90-theta)  0;
-           0               0              1]; 
+gps2lidar = [ cosd(90) sind(90) 0;
+             -sind(90) cosd(90) 0;
+             0       0          1];
+         
+LidarOffset2gps = [ cosd(90) -sind(90)  0;
+              sind(90)  cosd(90)   0;
+              0        0           1]; 
 
-groundTruthTrajectory    = [xEast_init, yNorth_init, zUp_init] * R;
-gps_to_lidar_diff_update = gps_to_lidar_diff * R_diff;
+groundTruthTrajectory    = [xEast_init, yNorth_init, zUp_init] * gps2lidar;
+gps_to_lidar_diff_update = gps_to_lidar_diff * LidarOffset2gps * (rotz(90)*roty(0)*rotx(0));
 
 LidarxEast_init =   groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
 LidaryNorth_init =  groundTruthTrajectory(2)  + gps_to_lidar_diff_update(2);
 LidarzUp_init =     groundTruthTrajectory(3)  + gps_to_lidar_diff_update(3);
 
+groundTruthTrajectory = groundTruthTrajectory;
+lidarTrajectory = [LidarxEast_init,LidaryNorth_init,LidarzUp_init];
+
 gps_position_store   = [gps_position_store; groundTruthTrajectory];
-lidar_position_store = [lidar_position_store; [LidarxEast_init,LidaryNorth_init,LidarzUp_init]];
+lidar_position_store = [lidar_position_store; lidarTrajectory];
 
 init_cloud = rosReadXYZ(matchedLidar);
 pointCloudList = pointCloud([init_cloud(:,1), init_cloud(:,2), init_cloud(:,3)]); 
 
 fprintf('Max time delta is %f sec \n',max(abs(diffs)));
+
 for cloud = 1:length(lidar_msgs)
     
     current_cloud = lidar_msgs{cloud};
-    matched_stamp = gps_msgs{indexes(cloud)};
+    matched_stamp = gps_msgs{indexes(cloud)+1};
     
     [xEast, yNorth, zUp] = latlon2local(matched_stamp.Latitude, matched_stamp.Longitude, matched_stamp.Altitude, origin);
     
-    theta = matched_stamp.Track;
-    ROTATION_UPDATE          = rotz(matchedGps_init.Track) * roty(0) * rotx(0);    
-    groundTruthTrajectory    = [xEast, yNorth, zUp] * ROTATION_UPDATE;
+    theta = matched_stamp.Track+180;
+
+    groundTruthTrajectory    = [xEast, yNorth, zUp] * gps2lidar ;
+    gps_to_lidar_diff_update = gps_to_lidar_diff * LidarOffset2gps * (rotz(90-theta)*roty(0)*rotx(0));
     
-    LidarxEast  =   groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
-    LidaryNorth =   groundTruthTrajectory(2)  + gps_to_lidar_diff_update(2);
-    LidarzUp    =   groundTruthTrajectory(3)  + gps_to_lidar_diff_update(3);
-    
+
+    LidarxEast =   groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
+    LidaryNorth =  groundTruthTrajectory(2)  + gps_to_lidar_diff_update(2);
+    LidarzUp =     groundTruthTrajectory(3)  + gps_to_lidar_diff_update(3);
+
+    groundTruthTrajectory = groundTruthTrajectory;
     lidarTrajectory = [LidarxEast, LidaryNorth, LidarzUp];
     
     xyz_cloud = rosReadXYZ(current_cloud);
     xyz_cloud = xyz_cloud( ~any( isnan(xyz_cloud) | isinf(xyz_cloud), 2),:);
     
-    xyz_cloud(:,1) = xyz_cloud(:,1) + LidarxEast;
-    xyz_cloud(:,2) = xyz_cloud(:,2) + LidaryNorth;
-    xyz_cloud(:,3) = xyz_cloud(:,3) + LidarzUp;
-  
-%     if cloud > 1
-%         matched_stamp_prev = gps_msgs{indexes(cloud-1)};
-%         previous_theta = matched_stamp_prev.Track;
-%         
-%         point_cloud_rotate = rotz(theta-previous_theta - 90) * roty(0) * rotx(0);  
-%         tform     = rigid3d(point_cloud_rotate,[0 0 0]);
-%     else
-    tform     = rigid3d(rotz(0)*roty(0)*rotx(0),[0 0 0]);
-%     end
+    
+    pc_rot    = rotz(0) * roty(0) * rotx(0);
+    tform     = rigid3d(pc_rot, [lidarTrajectory(1) lidarTrajectory(2) lidarTrajectory(3)]);
     
     pointClouXYZI_curr = pointCloud([xyz_cloud(:,1), xyz_cloud(:,2), xyz_cloud(:,3)]);
     pointClouXYZI_curr = pctransform(pointClouXYZI_curr, tform);
    
     lidar_position_store = [lidar_position_store; [lidarTrajectory(1), lidarTrajectory(2), lidarTrajectory(3)]];
-    gps_position_store   = [gps_position_store; groundTruthTrajectory(1) groundTruthTrajectory(2) groundTruthTrajectory(3)];
+    gps_position_store   = [gps_position_store;   [groundTruthTrajectory(1) groundTruthTrajectory(2) groundTruthTrajectory(3)]];
     
     mergeGridStep = 0.1;
     pointCloudList = pcmerge(pointCloudList, pointClouXYZI_curr, mergeGridStep);
-    cloud
-    length(lidar_msgs)
-%     
-%     if cloud > 100
-%         break
-%     end
+    
+%     cloud
+%     length(lidar_msgs)
+
+    if cloud > 60
+        break
+    end
 end
 
 hold on
