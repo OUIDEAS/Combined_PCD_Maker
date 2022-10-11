@@ -173,10 +173,17 @@ for cloud = 1:length(lidar_msgs)
     xyz_cloud(:,4)              = intensities;
     xyz_cloud(:,5)              = ring;
     
+    % Here are options for trimming data 
+    
     % Eliminate the closest ring - quick and dirty way to eliminate the
     % points that lie on the van
 %     xyz_cloud(xyz_cloud(:,5) == 0, :) = [];
-    xyz_cloud(sqrt(xyz_cloud(:,1).^2 + xyz_cloud(:,2).^2 + xyz_cloud(:,3).^3) <= 2, :) = [];
+
+    % Eliminate points within a certain range
+    xyz_cloud(sqrt(xyz_cloud(:,1).^2 + xyz_cloud(:,2).^2 + xyz_cloud(:,3).^2) <= 2, :) = [];
+    
+    % Eliminate points outside a certain range
+    xyz_cloud(sqrt(xyz_cloud(:,1).^2 + xyz_cloud(:,2).^2 + xyz_cloud(:,3).^2) >= 25, :) = [];
     
     % Eliminiating infs and nans from the xyz data - there may be a way to
     % use the 
@@ -185,7 +192,7 @@ for cloud = 1:length(lidar_msgs)
     % Transforming the point cloud
     tform                       = rigid3d(rotate_update, [lidarTrajectory(1) lidarTrajectory(2) lidarTrajectory(3)]);
     
-    % Creating the point cloud object
+    % Creating the point cloud object3
     pointClouXYZI_curr          = pointCloud([xyz_cloud(:,1), xyz_cloud(:,2), xyz_cloud(:,3)], 'Intensity',  xyz_cloud(:,4));
     pointClouXYZI_curr          = pctransform(pointClouXYZI_curr, tform);
    
