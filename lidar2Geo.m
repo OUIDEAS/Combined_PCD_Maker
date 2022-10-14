@@ -53,6 +53,9 @@ cloud_break                 = length(lidar_msgs);
 gps_pos_store               = zeros(cloud_break,3);
 lidar_pos_store             = gps_pos_store;
 
+min_dist                    = 2;
+max_dist                    = 25;
+
 %% Timestamps
 
 % Matching timestamps
@@ -117,9 +120,16 @@ ring                        = rosReadField(matchedLidar, 'ring');
 init_cloud(:,4)             = intensities;
 init_cloud(:,5)             = ring;
 
+% Eliminate nans and zeros
+init_cloud                   = init_cloud( ~any( isnan(init_cloud) | isinf(init_cloud), 2),:);
+
 % Eliminate the closest ring - quick and dirty way to eliminate the
 % points that lie on the van
-init_cloud                   = init_cloud( ~any( isnan(init_cloud) | isinf(init_cloud), 2),:);
+% init_cloud(init_cloud(:,5) == 0, :) = [];
+
+% Eliminate points based on min/max distance
+init_cloud(sqrt(init_cloud(:,1).^2 + init_cloud(:,2).^2 + init_cloud(:,3).^2) <= min_dist, :) = [];
+init_cloud(sqrt(init_cloud(:,1).^2 + init_cloud(:,2).^2 + init_cloud(:,3).^2) >= max_dist, :) = [];
 
 % Transforming the initial point cloud
 tform                       = rigid3d(init_rotate_offset, [lidarTrajectory(1) lidarTrajectory(2) lidarTrajectory(3)]);
@@ -147,23 +157,29 @@ for cloud = 1:length(lidar_msgs)
     roll                        = matched_stamp.Roll;
     pitch                       = matched_stamp.Pitch;
     yaw                         = matched_stamp.Track+180;
-     
+    
     % Creating the rotation matrix
     rotate_update               = rotz(90-yaw)*roty(roll)*rotx(pitch);
      
-    % Comment Here
+    % Offset the gps coord by the current orientation (in this case, initial) 
+    % Converts the ground truth to lidar frame
     groundTruthTrajectory       = [xEast, yNorth, zUp] * gps2lidar ;
     
-    % Comment Here
+    % Setting the updated difference between the lidar and gps coordiate and
+    % orientation
+    % Converts the offsett to the lidar frame
     gps_to_lidar_diff_update    = gps_to_lidar_diff * LidarOffset2gps * rotate_update;
 
-    % Comment Here
+    % Offset the gps coord by the current orientation (in this case, initial) 
+    % Converts the ground truth to lidar frame
+    groundTruthTrajectory       = groundTruthTrajectory;
+    
+    % Rotating the offset and adding them together
     LidarxEast                  = groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
     LidaryNorth                 = groundTruthTrajectory(2)  + gps_to_lidar_diff_update(2);
     LidarzUp                    = groundTruthTrajectory(3)  + gps_to_lidar_diff_update(3);
-
-    % Comment here
-    groundTruthTrajectory       = groundTruthTrajectory;
+    
+    % Making the vector of ^^^
     lidarTrajectory             = [LidarxEast, LidaryNorth, LidarzUp];
     
     % Reading the current cloud for xyz, intensity, and ring (channel) values
@@ -173,7 +189,7 @@ for cloud = 1:length(lidar_msgs)
     xyz_cloud(:,4)              = intensities;
     xyz_cloud(:,5)              = ring;
     
-    % Here are options for trimming data 
+    % Here are options for trimming data ~~~~~~~
     
     % Eliminate the closest ring - quick and dirty way to eliminate the
     % points that lie on the van
@@ -242,6 +258,28 @@ scatter3(lidar_pos_store(:,1),lidar_pos_store(:,2),lidar_pos_store(:,3),50,'^','
 pcshow(pointCloudList);
 
 view([0 0 90])
+
+%% Save the PCD
+
+save_ans = questdlg('Save pcd?', 'Save pcd?', 'Yes', 'No', 'No');
+
+switch save_ans
+    
+    case 'Yes'
+        
+        name_ans        = inputdlg({'Enter Filename:'}, 'Filename', [1 35], {'pcd.pcd'});
+        name_ans        = name_ans{:};
+                
+        export_dir      = uigetdir();
+        PCDFileName     = fullfile(export_dir, name_ans);
+        
+        pcwrite(pointCloudList,PCDFileName)
+        
+    case 'No'
+        
+        warning('WILL NOT SAVE THE PCD!')
+        
+end
 
 %% End Program 
 
