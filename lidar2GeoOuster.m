@@ -18,21 +18,16 @@ clear;
 close all;
 format compact
 
-
-%% WARNING
-
-%     warning('CURRENTLY REQUIRES STACK OF PCDS!')
-%     
-%     line1 = "PROCEDURE FOR PCD EXPORT:";
-%     line2 = "Terminal 1:";
-%     line3 = "roslaunch ouster_ros replay.launch bag_file:=/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/ouster_test/2023-05-24-16-31-32.bag";
-%     line4 = "Terminal 2:";
-%     line5 = "rosrun pcl_ros pointcloud_to_pcd input:=/ouster/points output_format:=binary";
-%     
-%     fprintf('\n%s\n%s\n%s\n%s\n%s\n', line1, line2, line3 ,line4 , line5)
-
-
 %% Options
+
+% Ouster provides some options beyond intensity - it includes an IR sensor
+% as well. These are the available options to 'color' the point cloud:
+% 'intensity' 'reflectivity' 'ambient' 'range'
+% Uncomment one of the four! (default is intensity)
+int_data_string = 'intensity';
+% int_data_string = 'reflectivity';
+% int_data_string = 'ambient';
+% int_data_string = 'range';
 
 % minimum/maximum distance from LiDAR point of origin to include/exclude
 use_dist_bool               = 0;
@@ -40,11 +35,9 @@ min_dist                    = 2;
 max_dist                    = 20;
 
 % Include which rings in final map
-use_ring_bool               = 1;
-% ring_min                    = 20;
-% ring_max                    = 20;
-ring_min                    = 124; % higher pointed lazer - max 31
-ring_max                    = 80; % lower pointed lazer - min 0
+use_ring_bool               = 0;
+ring_max                    = 127; % higher pointed lazer - max 127
+ring_min                    = 64; % lower pointed lazer - min 0
 
 
 %% Variable Initiation
@@ -86,15 +79,11 @@ bag_file = '/media/autobuntu/chonk/chonk/DATA/chonk_ROSBAG/qualityInspectionProp
 % bag_file = '/media/autobuntu/chonk/chonk/git_repos/lidar_2_geo/Delete/reset_start_time.bag';
 % pcd_export_location = '/media/autobuntu/chonk/chonk/DATA/ouster_pcd_out_test/';
 
+% Display filesize so you know how big of a cup of coffee you can get
 disp_file_size(bag_file);
-
-% [file_p1, file_p2, ~] = uigetfile('*.bag','Get Bag');
-% file = string(file_p2) + string(file_p1)
-
 disp('Loading the Bag!')
 
 % Load the rosbag into the workspace
-
 bag_init =  rosbag(bag_file);
 disp('Bag Loaded!')
 
@@ -171,7 +160,6 @@ average_sanity_check_result = mean(sanity_check_result);
 % Display the results
 % disp(closestIndexes);
 
-
 % Find which GPS message matches the first scan
 matchedGps_init             = gps_msgs{closestIndexes};
 
@@ -197,8 +185,6 @@ for cloud = 1:length(pcd_ts)
     
     % Reading the current point cloud and matched gps coord
     current_cloud               = ouster_point_msgs{cloud};
-%     current_cloud               = pcread(pcd_files(1).folder + "/" + pcd_files(1).name);
-%     ouster_data_table = grab_ouster_data(pcd_files(cloud).folder + "/" + pcd_files(cloud).name);
     matched_stamp               = gps_msgs{closestIndexes(cloud)};
     
     % Converting the gps coord to xyz (m)
@@ -208,14 +194,13 @@ for cloud = 1:length(pcd_ts)
     roll                        = matched_stamp.Roll;
     pitch                       = matched_stamp.Pitch;
     yaw                         = matched_stamp.Track+180;
+%     rpy_out = [rpy_out; roll pitch yaw];
     
     if roll == 0 && pitch == 0
         
         warning('WARNING: MISSING OR BAD ORIENTATION DATA!')
         
     end
-    
-    rpy_out = [rpy_out; roll pitch yaw];
     
     % Creating the rotation matrix
     rotate_update               = rotz(90-yaw)*roty(roll)*rotx(pitch);
@@ -228,10 +213,6 @@ for cloud = 1:length(pcd_ts)
     % orientation
     % Converts the offsett to the lidar frame
     gps_to_lidar_diff_update    = gps_to_lidar_diff * LidarOffset2gps * rotate_update;
-
-    % Offset the gps coord by the current orientation (in this case, initial) 
-    % Converts the ground truth to lidar frame
-    groundTruthTrajectory       = groundTruthTrajectory;
     
     % Rotating the offset and adding them together
     LidarxEast                  = groundTruthTrajectory(1)  + gps_to_lidar_diff_update(1);
@@ -241,39 +222,44 @@ for cloud = 1:length(pcd_ts)
     % Making the vector of ^^^
     lidarTrajectory             = [LidarxEast, LidaryNorth, LidarzUp];
     
+    % FIELDS:
+    % {'x';'y';'z';'intensity';'t';'reflectivity';'ring';'ambient';'range'}
+    
     % Reading the current cloud for xyz, intensity, and ring (channel) values
     xyz_cloud                   = rosReadXYZ(current_cloud);
-    intensities                 = rosReadField(current_cloud, 'intensity');
     ring                        = rosReadField(current_cloud, 'ring');
-    xyz_cloud(:,4)              = intensities;
+%     t                           = rosReadField(current_cloud, 't');  % not sure what this puppy does
+    if isequal(int_data_string, 'intensity')
+        int_data                    = rosReadField(current_cloud, 'intensity');
+    elseif isequal(int_data_string, 'reflectivity')
+        int_data                    = rosReadField(current_cloud, 'reflectivity');
+    elseif isequal(int_data_string, 'ambient')
+        int_data                    = rosReadField(current_cloud, 'ambient');
+    elseif isequal(int_data_string, 'range')
+        int_data                    = rosReadField(current_cloud, 'range');
+    else
+        int_data                    = rosReadField(current_cloud, 'intensity');
+    end
+    xyz_cloud(:,4)              = int_data;
     xyz_cloud(:,5)              = ring;
-
-%     xyz_cloud = [ouster_data_table.x ouster_data_table.y ouster_data_table.z ouster_data_table.i ouster_data_table.ring];
-%     intensities = [ouster_data_table.i];
-%     ring = ouster_data_table.ring;
     
     % Here are options for trimming data ~~~~~~~
-    
     if use_ring_bool
-        
         % Eliminate points based on channel
-        xyz_cloud(xyz_cloud(:,5) < ring_max, :) = [];
-        xyz_cloud(xyz_cloud(:,5) > ring_min, :) = [];
-
+        xyz_cloud(xyz_cloud(:,5) < ring_min, :) = [];
+        xyz_cloud(xyz_cloud(:,5) > ring_max, :) = [];
     end
     
     if use_dist_bool
-        
         % Eliminate points based on distance
         xyz_cloud(sqrt(xyz_cloud(:,1).^2 + xyz_cloud(:,2).^2 + xyz_cloud(:,3).^2) <= min_dist, :) = [];
         xyz_cloud(sqrt(xyz_cloud(:,1).^2 + xyz_cloud(:,2).^2 + xyz_cloud(:,3).^2) >= max_dist, :) = [];
-
     end
     
     % Eliminiating infs and nans from the xyz data
     xyz_cloud                   = xyz_cloud( ~any( isnan(xyz_cloud) | isinf(xyz_cloud), 2),:);
     
-    % EXPERIMENT sort rows
+    % Sort rows
     xyz_cloud = sortrows(xyz_cloud,5);
     
     % Transforming the point cloud
@@ -283,9 +269,11 @@ for cloud = 1:length(pcd_ts)
     pointClouXYZI_curr          = pointCloud([xyz_cloud(:,1), xyz_cloud(:,2), xyz_cloud(:,3)], 'Intensity',  xyz_cloud(:,4));
     pointClouXYZI_curr          = pctransform(pointClouXYZI_curr, tform);
    
+    % Storing the position
     gps_pos_store(cloud,:)      = groundTruthTrajectory;
     lidar_pos_store(cloud,:)    = lidarTrajectory;
     
+    % Storing the point cloud
     pointCloudList{cloud}       = pointClouXYZI_curr;
     
 %     mergeGridStep = 0.1;
@@ -295,15 +283,18 @@ for cloud = 1:length(pcd_ts)
         break
     end
     
+    
     %% Time to Completion Estimation
     tEnd = toc(tStart);
     time_store = [time_store; tEnd];
     time_avg = mean(time_store);
     est_time_to_complete = (time_avg * (cloud_break - cloud));
     
+    
     %% Waitbar
     
     waitbar(cloud/cloud_break,h,sprintf('Cloud %d out of %d, ~ %0.1f sec left',cloud, cloud_break, est_time_to_complete))
+    
     
 end
 
@@ -340,6 +331,15 @@ scatter3(lidar_pos_store(:,1),lidar_pos_store(:,2),lidar_pos_store(:,3),50,'^','
 
 % Plotting the point cloud
 pcshow(pointCloudList);
+
+% Adjusting the color scale so the image looks nicer
+if isequal(int_data_string, 'intensity')
+    caxis([100 4500])
+elseif isequal(int_data_string, 'reflectivity')
+    caxis([0 250])
+elseif isequal(int_data_string, 'ambient')
+    caxis([0 10000])
+end
 
 view([0 0 90])
 
